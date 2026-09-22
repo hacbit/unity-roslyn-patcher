@@ -1,0 +1,8 @@
+{
+  "name": "UnityRoslynLauncher.Editor",
+  "includePlatforms": ["Editor"],
+  "overrideReferences": true,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "noEngineReferences": false
+}

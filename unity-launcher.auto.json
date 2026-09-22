@@ -1,0 +1,5 @@
+{
+  "dotnet": "C:/Program Files/dotnet/dotnet.exe",
+  "csc": "C:/Program Files/dotnet/sdk/10.0.401/Roslyn/bincore/csc.dll",
+  "lang_version": "14"
+}

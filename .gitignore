@@ -1,0 +1,5 @@
+/target/
+/dist/
+/work/
+/unity-launcher.local.json
+/vendor/*.zip

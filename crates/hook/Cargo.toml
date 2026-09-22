@@ -1,0 +1,12 @@
+[package]
+name = "unity-roslyn-hook"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+launcher-core = { path = "../core" }
+launcher-detours = { path = "../detours" }
+windows-sys.workspace = true
