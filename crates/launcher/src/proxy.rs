@@ -9,11 +9,25 @@ fn run() -> Result<i32> {
     }
     let session = Session::read(&PathBuf::from(&args[1]))?;
     let cwd = std::env::current_dir()?;
-    let expanded = expand_compiler_response(&args[3..], &cwd, &session.project)?;
-    let prepared = prepare_args(expanded, &session.config.lang_version);
+    let expanded = expand_response(&args[3..], &cwd, 0)?;
+    let unity_package = is_unconfigured_package(&expanded, &session.project);
+    let (prepared, dotnet, csc, fallback) = if unity_package {
+        // Keep Unity's original compiler for packages which did not opt in via
+        // their own csc.rsp. Strip the global project language override.
+        let mut prepared = without_define(prepare_args(expanded, "9.0"), "MIRA_ADVANCE");
+        prepared.retain(|arg| language_option(arg).is_none());
+        prepared.push("/langversion:9.0".into());
+        session.log("compiler-route", "unity-package");
+        (prepared, &session.original_dotnet, &session.original_csc, "9.0")
+    } else {
+        let expanded = expand_compiler_response(&args[3..], &cwd, &session.project)?;
+        session.log("compiler-route", "configured-or-project");
+        (prepare_args(expanded, &session.config.lang_version),
+            &session.config.dotnet, &session.config.csc, session.config.lang_version.as_str())
+    };
     session.log(
         "language-version",
-        effective_language(&prepared, &session.config.lang_version),
+        effective_language(&prepared, fallback),
     );
     let response = session
         .directory
@@ -30,24 +44,20 @@ fn run() -> Result<i32> {
         "compiler",
         format!(
             "{} exec {} /noconfig @{}",
-            session.config.dotnet.display(),
-            session.config.csc.display(),
+            dotnet.display(),
+            csc.display(),
             response.display()
         ),
     );
-    let status = Command::new(&session.config.dotnet)
+    let status = Command::new(dotnet)
         .arg("exec")
-        .arg(&session.config.csc)
+        .arg(csc)
         .arg("/noconfig")
         .arg(format!("@{}", response.display()))
         .current_dir(cwd)
         .env(
             "DOTNET_ROOT",
-            session
-                .config
-                .dotnet
-                .parent()
-                .ok_or("dotnet has no parent")?,
+            dotnet.parent().ok_or("dotnet has no parent")?,
         )
         .env("DOTNET_MULTILEVEL_LOOKUP", "0")
         .creation_flags(0x08000000) // CREATE_NO_WINDOW; inherit Bee's stdio pipes.

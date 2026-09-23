@@ -288,9 +288,102 @@ pub fn prepare_args(args: Vec<String>, version: &str) -> Vec<String> {
     args
 }
 
+/// Route package assemblies without a package-owned csc.rsp through Unity's
+/// bundled compiler. Assets/csc.rsp is project-wide and is not a package opt-in.
+pub fn is_unconfigured_package(args: &[String], project: &Path) -> bool {
+    let mut package_root: Option<PathBuf> = None;
+    let mut sources = Vec::new();
+    for argument in args {
+        if argument.starts_with('-') || argument.starts_with('/')
+            || !argument.to_ascii_lowercase().ends_with(".cs") {
+            continue;
+        }
+        let normalized = argument.replace('\\', "/");
+        let project_prefix = format!("{}/", project.to_string_lossy().replace('\\', "/"));
+        let relative = if normalized.to_ascii_lowercase().starts_with(&project_prefix.to_ascii_lowercase()) {
+            &normalized[project_prefix.len()..]
+        } else {
+            normalized.trim_start_matches("./")
+        };
+        let parts: Vec<_> = relative.split('/').collect();
+        let root = if parts.len() >= 4
+            && parts[0].eq_ignore_ascii_case("Library")
+            && parts[1].eq_ignore_ascii_case("PackageCache")
+        {
+            Some(project.join("Library/PackageCache").join(parts[2]))
+        } else if parts.len() >= 3 && parts[0].eq_ignore_ascii_case("Packages") {
+            Some(project.join("Packages").join(parts[1]))
+        } else {
+            None
+        };
+        if let Some(root) = root {
+            if package_root.as_ref().is_some_and(|prior| prior != &root) {
+                return false;
+            }
+            package_root = Some(root);
+            sources.push(project.join(&relative));
+        } else if !relative.to_ascii_lowercase().starts_with("library/bee/") {
+            // Do not reroute a user assembly that mixes package and Assets sources.
+            return false;
+        }
+    }
+    let Some(root) = package_root else { return false };
+    for source in sources {
+        let mut parent = source.parent();
+        while let Some(directory) = parent {
+            if directory.join("csc.rsp").is_file() {
+                return false;
+            }
+            if directory == root { break; }
+            parent = directory.parent();
+        }
+    }
+    true
+}
+
+pub fn without_define(args: Vec<String>, symbol: &str) -> Vec<String> {
+    args.into_iter().filter_map(|argument| {
+        let body = argument.trim_start_matches(['-', '/']);
+        let Some((key, value)) = body.split_once(':') else { return Some(argument) };
+        if !key.eq_ignore_ascii_case("define") && !key.eq_ignore_ascii_case("d") {
+            return Some(argument);
+        }
+        let kept: Vec<_> = value.split([';', ','])
+            .filter(|part| !part.eq_ignore_ascii_case(symbol) && !part.is_empty())
+            .collect();
+        (!kept.is_empty()).then(|| format!("/define:{}", kept.join(";")))
+    }).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn unconfigured_package_uses_unity_but_package_response_opts_in() {
+        let project = std::env::temp_dir().join(format!("roslyn-package-test-{}", std::process::id()));
+        let package = project.join("Library/PackageCache/com.example@1.0.0/Runtime");
+        fs::create_dir_all(&package).unwrap();
+        let args = vec![
+            "-out:Library/Bee/artifacts/Example.dll".into(),
+            "Library/PackageCache/com.example@1.0.0/Runtime/Example.cs".into(),
+            "-langversion:preview".into(),
+        ];
+        assert!(is_unconfigured_package(&args, &project));
+        assert!(!is_unconfigured_package(&["Assets/Scripts/Game.cs".into()], &project));
+        assert!(!is_unconfigured_package(&[args[1].clone(), "Assets/Game.cs".into()], &project));
+        let absolute = vec![package.join("Example.cs").to_string_lossy().to_string()];
+        assert!(is_unconfigured_package(&absolute, &project));
+        fs::write(package.join("csc.rsp"), "-langversion:14").unwrap();
+        assert!(!is_unconfigured_package(&args, &project));
+        fs::remove_dir_all(project).unwrap();
+    }
+    #[test]
+    fn package_drops_advance_define_without_dropping_unity_defines() {
+        assert_eq!(without_define(vec!["-define:UNITY_EDITOR;MIRA_ADVANCE;DEBUG".into(),
+            "/nullable:enable".into()], "MIRA_ADVANCE"),
+            ["/define:UNITY_EDITOR;DEBUG", "/nullable:enable"]);
+        assert!(without_define(vec!["/d:MIRA_ADVANCE".into()], "MIRA_ADVANCE").is_empty());
+    }
     #[test]
     fn quoting_round_trip() {
         let input: Vec<String> = [

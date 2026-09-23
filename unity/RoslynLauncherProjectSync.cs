@@ -28,8 +28,8 @@ namespace UnityRoslynLauncher
         }
 
         private static string ProjectRoot => Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-        private static Dictionary<string, ScriptCompilerOptions> editorOptions;
-        private static Dictionary<string, ScriptCompilerOptions> playerOptions;
+        private static Dictionary<string, UnityEditor.Compilation.Assembly> editorOptions;
+        private static Dictionary<string, UnityEditor.Compilation.Assembly> playerOptions;
 
         private static void InvalidateOptions() { editorOptions = null; playerOptions = null; }
 
@@ -49,22 +49,61 @@ namespace UnityRoslynLauncher
             if (options == null)
             {
                 options = CompilationPipeline.GetAssemblies(player ? AssembliesType.Player : AssembliesType.Editor)
-                    .ToDictionary(a => a.name, a => a.compilerOptions, StringComparer.Ordinal);
+                    .ToDictionary(a => a.name, a => a, StringComparer.Ordinal);
                 if (player) playerOptions = options; else editorOptions = options;
             }
-            ScriptCompilerOptions assembly;
+            UnityEditor.Compilation.Assembly assembly;
             if (!options.TryGetValue(name, out assembly))
             {
                 if (!player || !name.EndsWith(".Player", StringComparison.OrdinalIgnoreCase) ||
                     !options.TryGetValue(name.Substring(0, name.Length - ".Player".Length), out assembly)) return fallback;
             }
-            var directories = CompilationPipeline.GetSystemAssemblyDirectories(assembly.ApiCompatibilityLevel);
+            if (UsesUnityCompiler(assembly)) return "9.0";
+            var compilerOptions = assembly.compilerOptions;
+            var directories = CompilationPipeline.GetSystemAssemblyDirectories(compilerOptions.ApiCompatibilityLevel);
             // Do not use assembly.LanguageVersion: that is Unity's generated built-in default.
             // Bee writes custom compiler arguments first, followed by response file arguments.
-            var version = ApplyLanguageArguments(assembly.AdditionalCompilerArguments, fallback, directories, 0);
-            foreach (var response in assembly.ResponseFiles ?? new string[0])
+            var version = ApplyLanguageArguments(compilerOptions.AdditionalCompilerArguments, fallback, directories, 0);
+            foreach (var response in compilerOptions.ResponseFiles ?? new string[0])
                 version = ApplyLanguageArguments(new[] { "@" + response }, version, directories, 0);
             return version;
+        }
+
+        private static bool UsesUnityCompiler(UnityEditor.Compilation.Assembly assembly)
+        {
+            string packageRoot = null;
+            var sources = new List<string>();
+            foreach (var source in assembly.sourceFiles ?? new string[0])
+            {
+                var full = Path.GetFullPath(Path.IsPathRooted(source) ? source : Path.Combine(ProjectRoot, source));
+                if (!full.StartsWith(ProjectRoot.TrimEnd('\\', '/') + Path.DirectorySeparatorChar,
+                        StringComparison.OrdinalIgnoreCase)) return false;
+                var relative = full.Substring(ProjectRoot.TrimEnd('\\', '/').Length + 1)
+                    .Replace('\\', '/').Split('/');
+                string root = null;
+                if (relative.Length >= 4 && relative[0].Equals("Library", StringComparison.OrdinalIgnoreCase) &&
+                    relative[1].Equals("PackageCache", StringComparison.OrdinalIgnoreCase))
+                    root = Path.Combine(ProjectRoot, "Library", "PackageCache", relative[2]);
+                else if (relative.Length >= 3 && relative[0].Equals("Packages", StringComparison.OrdinalIgnoreCase))
+                    root = Path.Combine(ProjectRoot, "Packages", relative[1]);
+                else if (relative.Length >= 2 && relative[0].Equals("Library", StringComparison.OrdinalIgnoreCase) &&
+                         relative[1].Equals("Bee", StringComparison.OrdinalIgnoreCase)) continue;
+                else return false;
+                if (packageRoot != null && !packageRoot.Equals(root, StringComparison.OrdinalIgnoreCase)) return false;
+                packageRoot = root;
+                sources.Add(full);
+            }
+            if (packageRoot == null) return false;
+            foreach (var source in sources)
+            {
+                for (var directory = Path.GetDirectoryName(source); directory != null;
+                     directory = Path.GetDirectoryName(directory))
+                {
+                    if (File.Exists(Path.Combine(directory, "csc.rsp"))) return false;
+                    if (directory.Equals(packageRoot, StringComparison.OrdinalIgnoreCase)) break;
+                }
+            }
+            return true;
         }
 
         private static string ApplyLanguageArguments(IEnumerable<string> arguments, string version, string[] directories, int depth)
