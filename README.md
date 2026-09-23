@@ -2,6 +2,11 @@
 
 Windows x64 的轻量 Unity 启动器。Rust 实现，通过 FFI 使用微软 Detours 4.0.1。
 不修改 Unity 安装目录；指定 Roslyn 只应用于本次启动的 Unity 编译进程树。
+若希望修改本机 Unity 安装、让编译器升级持续生效，可参考
+[Unity Roslyn Updater](https://github.com/DaZombieKiller/UnityRoslynUpdater)。它会修改所选 Unity 编辑器的安装目录。
+
+> 项目使用依赖本工具的 C# 11 及以上语法后，需要通过本启动器打开。
+> 直接从 Unity Hub 打开会使用 Unity 内置编译器，重新编译这些代码会因语法不受支持而失败。
 
 ## 使用
 
@@ -187,7 +192,7 @@ IDE 生成回调验收：`tests/run-ide-smoke.ps1 -VisualStudioDll <本机Unity.
 
 ## 已验证范围与限制
 
-- 已验证：Windows x64，Unity 2022.3.40f1c1，SDK 10.0.401 自带 Roslyn，默认 C# 12、程序集覆盖 14/9.0。
+- 已验证：Windows x64，Unity 2022.3.40f1c1 / 2022.3.62f3c1，SDK 10.0.401 自带 Roslyn，默认 C# 12、程序集覆盖 14/9.0。
 - 特性样例：文件作用域命名空间、主构造函数、集合表达式、C# 14 的 `field` 属性。
 - 尚未验证：其他 Unity 版本、业务项目的全部包与 Source Generator、IL2CPP、Android。
 - 不升级 Unity Mono / IL2CPP / 基础类库；依赖新运行时的 C# 特性仍可能不可用。
