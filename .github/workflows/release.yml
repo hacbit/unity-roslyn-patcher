@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Rust MSVC toolchain
+        shell: pwsh
+        run: rustup default stable-x86_64-pc-windows-msvc
+
+      - name: Test
+        shell: pwsh
+        run: cargo test --workspace --locked
+
+      - name: Build package
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          if ($tag -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$') {
+            throw "Invalid release tag: $tag"
+          }
+          .\package.ps1 -OutputPath "dist/unity-roslyn-launcher-$tag.zip"
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $asset = "dist/unity-roslyn-launcher-$tag.zip"
+          $releaseArgs = @('release', 'create', $tag, $asset, '--verify-tag', '--generate-notes', '--title', $tag)
+          if ($tag.Contains('-')) { $releaseArgs += '--prerelease' }
+          & gh @releaseArgs
+          if ($LASTEXITCODE -ne 0) { throw 'GitHub Release creation failed' }

@@ -5,16 +5,16 @@ Windows x64 的轻量 Unity 启动器。Rust 实现，通过 FFI 使用微软 De
 
 ## 使用
 
-先关闭目标项目的 Unity，再从项目目录执行：
+先关闭目标项目的 Unity，再从启动器仓库目录执行：
 
 ```powershell
-& 'D:\Tools\unity-roslyn-patcher\dist\unity-launcher.exe'
+.\dist\unity-launcher.exe --project .\work\UnitySmoke
 ```
 
-或从任意目录指定项目：
+也可以将 `dist` 文件放到自选位置，再指定项目目录：
 
 ```powershell
-& 'D:\Tools\unity-roslyn-patcher\dist\unity-launcher.exe' --project 'D:\clients\client_hls_2'
+.\unity-launcher.exe --project <Unity 项目目录>
 ```
 
 一键启动：把仓库里的 `Open-Unity.example.cmd` 复制到 Unity 项目根目录，双击即可。
@@ -26,20 +26,30 @@ Windows x64 的轻量 Unity 启动器。Rust 实现，通过 FFI 使用微软 De
 Roslyn 和 .NET 运行时使用配置指定的本地安装，不打包在内。
 `chain-probe.exe` 只用于自测。
 
+运行 `./package.ps1` 可先编译 Release，再将 `dist` 的发布文件原样压成
+`dist/unity-roslyn-launcher.zip`。ZIP 顶层就是 `unity-launcher.exe`、配置、
+`runtime.json` 和 `runtime/`，不预设 Unity 项目的目录布局。仅复用现有构建产物时
+可传 `-SkipBuild`。已有旧版本运行目录、备份清单和旧 ZIP 不会进入新包。
+包内 `.gitignore` 忽略解压后的 `runtime/` 和 `runtime.json`；ZIP 内仍必须包含它们。
+
+推送 `v1.2.3` 形式的标签会触发 GitHub Actions，在 Windows 上构建并创建同名
+Release，附件名为 `unity-roslyn-launcher-v1.2.3.zip`。发布包不包含 Unity 或 .NET SDK，
+使用者需要先安装所需版本并修改 `unity-launcher.json`。普通提交不会触发发布。
+
 配置按 `--config`、项目根目录 `unity-launcher.json`、EXE 同目录的顺序查找。
 相对路径以配置文件所在目录为基准。
 
 ```json
 {
-  "dotnet": "C:/Program Files/dotnet/dotnet.exe",
-  "csc": "C:/Program Files/dotnet/sdk/10.0.401/Roslyn/bincore/csc.dll",
+  "dotnet": "<dotnet.exe 的绝对路径>",
+  "csc": "<Roslyn/bincore/csc.dll 的绝对路径>",
   "lang_version": "12"
 }
 ```
 
 未填写 `unity` 时，根据项目 `ProjectSettings/ProjectVersion.txt` 自动查找：
-`UNITY_EDITOR_ROOT` 环境变量指定的目录、`D:/UnityEditors`、
-`%ProgramFiles%/Unity/Hub/Editor`。也可添加 `"unity": ".../Editor/Unity.exe"` 显式指定，
+`UNITY_EDITOR_ROOT` 环境变量指定的目录、启动器内置的编辑器目录和
+Unity Hub 安装目录。也可添加 `"unity": "<Editor/Unity.exe 的绝对路径>"` 显式指定，
 此时由使用者保证它与项目版本匹配。
 
 启动前会实际运行指定编译器，检查运行时能否承载它，以及是否支持指定的语言版本。

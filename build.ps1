@@ -34,4 +34,5 @@ try {
     }
     Copy-Item -LiteralPath vendor/Detours-4.0.1/LICENSE.md -Destination dist/Detours-LICENSE.md
     Copy-Item -LiteralPath README.md -Destination dist/README.md
+    Copy-Item -LiteralPath dist.gitignore -Destination dist/.gitignore
 } finally { Pop-Location }
