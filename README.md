@@ -22,24 +22,49 @@ Windows x64 的轻量 Unity 启动器。Rust 实现，通过 FFI 使用微软 De
 .\unity-launcher.exe --project <Unity 项目目录>
 ```
 
-一键启动：把仓库里的 `Open-Unity.example.cmd` 复制到 Unity 项目根目录，双击即可。
-若移动工具安装目录，修改脚本里的 EXE 路径。工具目录需要 ASCII 路径；含空格路径受支持。
+一键启动：两个 ZIP 都包含 `Open-Unity.cmd`。默认将包解压到 Unity 项目根目录，
+脚本、`unity-launcher.exe` 和 `unity-launcher.json` 放在同一目录，双击脚本即可。
+工具单独放置时，修改脚本的 `PROJECT_DIR`；只移动脚本时，也需修改 `TOOL_DIR`。
+`CONFIG_PATH` 默认指向工具目录的 JSON，可独立修改。脚本内有注释和绝对路径示例，
+并显式传入 `--config`，避免项目目录中的旧配置覆盖包内配置。
+工具目录需要 ASCII 路径；含空格路径受支持。脚本接受附加启动器参数，例如 `Open-Unity.cmd --rebuild`。
 
 发布时请复制整个 `dist/`，保留 `unity-launcher.exe`、`unity-launcher.json`、
 `runtime.json` 及其指向的 `runtime/<版本>/` 中的 Hook DLL 和编译代理。
 运行文件按版本存放，已打开的 Unity 可以继续使用旧版本，新启动的项目使用新版本。
-Roslyn 和 .NET 运行时使用配置指定的本地安装，不打包在内。
-`chain-probe.exe` 只用于自测。
+`chain-probe.exe` 只用于自测，不进入发布包。
 
-运行 `./package.ps1` 可先编译 Release，再将 `dist` 的发布文件原样压成
-`dist/unity-roslyn-launcher.zip`。ZIP 顶层就是 `unity-launcher.exe`、配置、
-`runtime.json` 和 `runtime/`，不预设 Unity 项目的目录布局。仅复用现有构建产物时
-可传 `-SkipBuild`。已有旧版本运行目录、备份清单和旧 ZIP 不会进入新包。
-包内 `.gitignore` 忽略解压后的 `runtime/` 和 `runtime.json`；ZIP 内仍必须包含它们。
+使用 PowerShell 7 运行 `./package.ps1`，先编译 Release，再生成两个包：
+
+| 包 | 内容与使用方式 |
+| --- | --- |
+| `dist/unity-roslyn-launcher-v<版本>-lite.zip` | 启动器、Hook、编译代理、配置示例和一键启动脚本；需要本机 .NET / Roslyn，在 JSON 中修改 `dotnet` 和 `csc` 路径。 |
+| `dist/unity-roslyn-launcher-v<版本>-bundled.zip` | 以上文件加 `RoslynCompiler/`，包含 .NET 主机、一个兼容的运行时和 Roslyn 完整编译器目录；JSON 使用包内相对路径，无需安装 .NET SDK。 |
+
+默认提取 SDK `10.0.401`，与本项目已验证的编译器版本一致。仅复制编译器和所需运行时，
+不包含 SDK 工具、模板或引用包。默认从 PATH 中的 `dotnet.exe` 所在目录提取，
+也可指定完整 SDK 安装目录或已提取的编译器目录：
+
+```powershell
+.\package.ps1 -DotnetRoot 'D:\UnityTest\Mira\Tools\RoslynCompiler'
+# 指定其他已安装 SDK 版本（需支持配置中的语言版本）
+.\package.ps1 -DotnetRoot 'C:\Program Files\dotnet' -SdkVersion '10.0.401'
+# 仅打轻量包，无需 SDK；复用已有 Release 产物
+.\package.ps1 -LiteOnly -SkipBuild
+```
+
+包名默认读取 `crates/launcher/Cargo.toml` 的版本号（当前为 `v0.1.1`），
+可用 `-Version v1.2.3` 指定版本；CI 使用发布标签作为版本号。
+`-SkipBuild` 可复用现有构建；`-OutputPath` 自定义轻量 ZIP 路径，
+`-BundledOutputPath` 自定义内置 ZIP 路径。打包使用文件白名单和源码配置模板，
+不会带入 `dist` 中的私人配置、自测工具、旧版本运行目录、备份或旧 ZIP。
+包内 `.gitignore` 忽略解压后的 `runtime/`、`runtime.json` 和 `RoslynCompiler/`。
+内置包保留 .NET 的 `LICENSE.txt` 和 `ThirdPartyNotices.txt`。
 
 推送 `v1.2.3` 形式的标签会触发 GitHub Actions，在 Windows 上构建并创建同名
-Release，附件名为 `unity-roslyn-launcher-v1.2.3.zip`。发布包不包含 Unity 或 .NET SDK，
-使用者需要先安装所需版本并修改 `unity-launcher.json`。普通提交不会触发发布。
+Release，附件名为 `unity-roslyn-launcher-v1.2.3-lite.zip` 和
+`unity-roslyn-launcher-v1.2.3-bundled.zip`。CI 安装固定版本 SDK 并提取内置编译器；
+两个包都不包含 Unity。普通提交不会触发发布。
 
 配置按 `--config`、项目根目录 `unity-launcher.json`、EXE 同目录的顺序查找。
 相对路径以配置文件所在目录为基准。
@@ -169,6 +194,9 @@ cargo test --workspace --locked
 ```
 
 `build.ps1` 不覆盖已有的 `dist/unity-launcher.json`。
+`tests/test-packages.ps1` 校验两个 ZIP 的结构、精简范围、许可文件和相对路径，
+并用解压后的内置编译器实际编译 C# 14 示例。传 `-UnityVersion <已安装版本>`
+可额外通过包内 `Open-Unity.cmd --dry-run` 验证同目录启动和带空格路径，不启动 Unity。
 源码固定使用 `vendor/Detours-4.0.1`，来源：
 https://github.com/microsoft/Detours/releases/tag/v4.0.1 ，许可证保留在原目录和发布目录。
 

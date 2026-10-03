@@ -23,14 +23,25 @@ jobs:
         shell: pwsh
         run: cargo test --workspace --locked
 
-      - name: Build package
+      - name: Install compiler SDK for bundled package
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.401'
+
+      - name: Build packages
         shell: pwsh
         run: |
           $tag = $env:GITHUB_REF_NAME
           if ($tag -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$') {
             throw "Invalid release tag: $tag"
           }
-          .\package.ps1 -OutputPath "dist/unity-roslyn-launcher-$tag.zip"
+          .\package.ps1 -DotnetRoot $env:DOTNET_ROOT -Version $tag
+
+      - name: Validate packages
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          .\tests\test-packages.ps1 -LitePath "dist/unity-roslyn-launcher-$tag-lite.zip" -BundledPath "dist/unity-roslyn-launcher-$tag-bundled.zip"
 
       - name: Publish GitHub Release
         shell: pwsh
@@ -38,8 +49,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = $env:GITHUB_REF_NAME
-          $asset = "dist/unity-roslyn-launcher-$tag.zip"
-          $releaseArgs = @('release', 'create', $tag, $asset, '--verify-tag', '--generate-notes', '--title', $tag)
+          $assets = @("dist/unity-roslyn-launcher-$tag-lite.zip", "dist/unity-roslyn-launcher-$tag-bundled.zip")
+          $releaseArgs = @('release', 'create', $tag) + $assets + @('--verify-tag', '--generate-notes', '--title', $tag)
           if ($tag.Contains('-')) { $releaseArgs += '--prerelease' }
           & gh @releaseArgs
           if ($LASTEXITCODE -ne 0) { throw 'GitHub Release creation failed' }
